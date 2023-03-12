@@ -1,0 +1,98 @@
+{{- /* Credits go to Joe Mooring who authored this markdown render hook:
+     https://github.com/jmooring/hugo-testing/blob/hugo-forum-topic-36924/layouts/_default/_markup/render-codeblock-kroki.html
+     Renders diagrams from textual descriptions to SVG images using the Kroki service.
+
+References:
+
+- https://kroki.io/
+- https://kroki.io/#examples
+
+@param {obj} .Attributes The generic attributes from the info string.
+@param {string} .Inner The content between the leading and trailing code fences, excluding the info string.
+@param {obj} .Options The highlighting options from the info string.
+@param {int} .Ordinal The zero-based ordinal of the code block on the page.
+@param {obj} .Page A reference to the page containing the code block.
+@param {obj} .Position The position of the code block within the page content.
+@param {string} .Type The first word of the info string.
+*/}}
+
+{{- $supportedTypes := slice
+  "actdiag" "blockdiag" "bpmn" "bytefield" "c4plantuml" "d2" "dbml" "ditaa" "erd" "excalidraw" "graphviz" "mermaid"
+  "nomnoml" "nwdiag" "packetdiag" "pikchr" "plantuml" "rackdiag" "seqdiag" "strucrurizr"
+  "svgbob" "umlet" "vega" "vegalite" "wavedrom"
+}}
+{{- $typesDelimited := delimit $supportedTypes ", " ", and " }}
+{{- $supportedFormats := slice "svg" "png" "jpeg" }}
+{{- $formatsDelimited := delimit $supportedFormats ", " ", and " }}
+{{- /* Initialize variables. */}}
+
+{{- $attrs := .context.Attributes }}
+{{- $position := .context.Position }}
+{{- $inner := .context.Inner }}
+{{- $url := "https://kroki.io/" }}
+{{- with .context.Page.Site.Params.kroki.kroki_server }}
+  {{- $url = . }}
+{{- end }}
+{{- $outputFormat := "svg" }}
+{{- with $attrs.format }}
+  {{- $outputFormat = . }}
+{{- end }}
+{{- $diagramOptions := "{}" }}
+{{/* Add attributes. */}}
+{{- $id := printf "kroki-%d" ( add 1 .context.Ordinal) }}
+{{- $class := "" }}
+{{- with $attrs.class }}
+  {{- $class = printf "diagram diagram-kroki diagram-kroki-%s %s" .type $attrs.class }}
+{{- else }}
+  {{- $class = printf "diagram diagram-kroki diagram-kroki-%s" .type }}
+{{- end }}
+{{- $attrs := merge $attrs (dict "class" $class "id" $id "alt" "diagram") }}
+
+{{- /* Render diagram */}}
+
+{{- with $diagramType := .type  | lower }}
+  {{- if not (in $supportedTypes .) }}
+    {{- errorf "The Kroki code block render hook was called with an invalid type %q. Valid types are %s. See %s" $diagramType $typesDelimited $position }}
+  {{- else }}
+    {{- if not (in $supportedFormats $outputFormat) }}
+      {{- errorf "The Kroki code block render hook was called with an invalid output format %q. Valid types are %s. See %s" $outputFormat $formatsDelimited $position }}
+    {{ else }}
+      {{- if or $attrs.disable $.context.Page.Site.Params.kroki.disable }}
+        {{- warnf "Disabled Kroki code block at %s." $position }}
+      {{- else }}
+        {{- with $inner }}
+          {{- $kroki := dict
+            "diagram_source" .
+            "diagram_type" $diagramType
+            "output_format" $outputFormat
+            
+          }}
+          {{- $opts := dict
+            "method" "post"
+            "body" ($kroki | jsonify)
+          }}
+          {{- with resources.GetRemote $url $opts }}
+            {{- with .Err }}
+              {{- errorf "The Kroki code block render hook was unable to get the remote diagram. See %s" . $position }}
+            {{- else }}
+              {{- $attrs = merge $attrs (dict "src" .RelPermalink) }}
+              <img
+                {{- range $k, $v := $attrs }}
+                  {{- if not (eq $k "type") }}
+                    {{- printf " %s=%q" $k $v | safeHTMLAttr }}
+                  {{- end }}
+                {{- end -}}
+              >
+            {{- end }}
+          {{- else }}
+            {{- errorf "The Kroki code block render hook was unable to get the remote diagram. See %s" $position }}
+          {{- end }}
+        {{- else }}
+          {{- errorf "The Kroki code block render hook cannot create a diagram without content. See %s" $position }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
+  {{ end }}
+{{- else }}
+  {{- errorf "The Kroki code block render hook requires a type attribute. Valid types are %s. See %s" $typesDelimited $position }}
+{{- end }}

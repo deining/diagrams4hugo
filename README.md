@@ -1,2 +1,2 @@
 # diagrams4hugo
-Hugo module for creating diagrams in your pages
+Hugo module for display of diagrams on your pages
